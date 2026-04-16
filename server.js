@@ -1,86 +1,124 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
+/**
+ * Centralized API Configuration
+ */
+window.API_BASE = (window.location.protocol.startsWith('http')) 
+  ? window.location.origin 
+  : "http://20.94.193.165:8080";
 
-const app = express();
+/* ALERT */
+function showAlert(msg){
+  document.getElementById('alertBox').classList.add('show');
+  document.getElementById('alertText').textContent = msg;
+}
 
-/* ✅ MIDDLEWARE */
-app.use(cors());
-app.use(express.json());
+function hideAlert(){
+  document.getElementById('alertBox').classList.remove('show');
+}
 
-/* ✅ CONNECT MONGODB */
-mongoose.connect("mongodb://127.0.0.1:27017/drave")
-.then(() => console.log("MongoDB Connected ✅"))
-.catch(err => console.log("Mongo Error ❌", err));
+/* LOADING */
+function setLoading(id, on){
+  const btn = document.getElementById(id);
+  btn.classList.toggle('loading', on);
+  btn.disabled = on;
+}
 
-/* ✅ SCHEMA */
-const ChatSchema = new mongoose.Schema({
-  chatId: String,
-  role: String,
-  text: String,
-  createdAt: { type: Date, default: Date.now }
-});
+/* LOGIN */
+async function handleLogin(){
+  hideAlert();
 
-const Chat = mongoose.model("Chat", ChatSchema);
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
 
-/* ✅ TEST ROUTE */
-app.get("/", (req,res)=>{
-  res.send("Server running ✅");
-});
+  setLoading("loginBtn", true);
 
-/* ✅ CHAT API */
-app.post("/chat", async (req, res) => {
   try {
-    console.log("BODY:", req.body);
+    const res = await fetch(`${API_BASE}/auth/login`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
 
-    const { message, chatId } = req.body;
+    const data = await res.json();
 
-    if (!message || !chatId) {
-      return res.json({ reply: "Missing message/chatId ❌" });
+    if(!res.ok){
+      showAlert(data.error || "Login failed ❌");
+      return;
     }
 
-    /* ✅ SAVE USER */
-    await Chat.create({
-      chatId,
-      role: "user",
-      text: message
-    });
+    // Clear previous session data
+    localStorage.removeItem("drave_chats");
+    localStorage.removeItem("drave_current");
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
 
-    console.log("User saved ✅");
+    showSuccess("login", data.user.name);
 
-    /* 🤖 SIMPLE REPLY (TEST) */
-    const reply = "Reply: " + message;
-
-    /* ✅ SAVE AI */
-    await Chat.create({
-      chatId,
-      role: "ai",
-      text: reply
-    });
-
-    console.log("AI saved ✅");
-
-    res.json({ reply });
+    setTimeout(() => {
+      window.location.replace("/");
+    }, 1000);
 
   } catch (err) {
-    console.error("ERROR:", err);
-    res.status(500).json({ reply: "Server error ❌" });
+    console.log(err);
+    showAlert("Backend not reachable on port 8080 ❌");
   }
-});
 
-/* ✅ HISTORY */
-app.get("/history/:id", async (req, res) => {
+  setLoading("loginBtn", false);
+}
+
+/* REGISTER */
+async function handleRegister(){
+  hideAlert();
+
+  const name = document.getElementById('regName').value;
+  const email = document.getElementById('regEmail').value;
+  const password = document.getElementById('regPassword').value;
+
+  setLoading("regBtn", true);
+
   try {
-    const data = await Chat.find({ chatId: req.params.id })
-      .sort({ createdAt: 1 });
+    const res = await fetch(`${API_BASE}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, email, password })
+    });
 
-    res.json(data);
+    const data = await res.json();
+
+    if(!res.ok){
+      showAlert(data.error || "Register failed ❌");
+      return;
+    }
+
+    // Clear previous session data
+    localStorage.removeItem("drave_chats");
+    localStorage.removeItem("drave_current");
+    localStorage.setItem("token", data.token);
+    localStorage.setItem("user", JSON.stringify(data.user));
+
+    showSuccess("register", name);
+
+    setTimeout(() => {
+      window.location.href = "/";
+    }, 1200);
+
   } catch (err) {
-    res.status(500).json({ error: "Fetch error" });
+    console.log(err);
+    showAlert("Backend not reachable on port 8080 ❌");
   }
-});
 
-/* ✅ START SERVER */
-app.listen(5000, () => {
-  console.log("Server running → http://127.0.0.1:5000 🚀");
-});
+  setLoading("regBtn", false);
+}
+
+/* SUCCESS */
+function showSuccess(mode, name){
+  document.getElementById('loginForm').classList.remove('active');
+  document.getElementById('registerForm').classList.remove('active');
+
+  const screen = document.getElementById('successScreen');
+  screen.classList.add('show');
+
+  document.getElementById('successTitle').textContent =
+    mode === "register"
+      ? `Welcome, ${name}! 🎉`
+      : `Welcome back, ${name}!`;
+}

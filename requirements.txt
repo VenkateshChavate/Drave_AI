@@ -1,2 +1,7 @@
 flask
-requests
+flask-cors
+pymongo
+bcrypt
+pyjwt
+gunicorn
+google-generativeai
