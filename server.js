@@ -45,9 +45,7 @@ async function handleLogin(){
       return;
     }
 
-    // Clear previous session data
-    localStorage.removeItem("drave_chats");
-    localStorage.removeItem("drave_current");
+    // Save session data
     localStorage.setItem("token", data.token);
     localStorage.setItem("user", JSON.stringify(data.user));
 
@@ -89,9 +87,7 @@ async function handleRegister(){
       return;
     }
 
-    // Clear previous session data
-    localStorage.removeItem("drave_chats");
-    localStorage.removeItem("drave_current");
+    // Save session data
     localStorage.setItem("token", data.token);
     localStorage.setItem("user", JSON.stringify(data.user));
 

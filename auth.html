@@ -563,8 +563,6 @@ async function handleLogin(){
       return;
     }
 
-    localStorage.removeItem("drave_chats");
-    localStorage.removeItem("drave_current");
     localStorage.setItem("token", data.token);
     localStorage.setItem("user", JSON.stringify(data.user));
 
@@ -608,8 +606,6 @@ async function handleRegister(){
       return;
     }
 
-    localStorage.removeItem("drave_chats");
-    localStorage.removeItem("drave_current");
     localStorage.setItem("token", data.token);
     localStorage.setItem("user", JSON.stringify(data.user));
 
