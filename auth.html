@@ -29,6 +29,23 @@
   --input-h:52px;
 }
 
+:root.light-theme{
+  --bg:#f9f9f9;
+  --surface:#ffffff;
+  --surface2:#f3f3f3;
+  --surface3:#e5e5e5;
+  --border:rgba(0,0,0,0.06);
+  --border-md:rgba(0,0,0,0.1);
+  --border-hi:rgba(0,0,0,0.2);
+  --text:#1a1717;
+  --text-2:#4a4244;
+  --text-3:#8c8486;
+  --accent2:#c1121f;
+  --accent-dim:rgba(230,57,70,0.1);
+  --accent-glow:rgba(230,57,70,0.2);
+  --red-deep:#9b0000;
+}
+
 html,body{
   height:100%;
   font-family:'DM Sans',sans-serif;
@@ -135,7 +152,7 @@ html,body{
   font-style:italic;
   font-size:38px;
   letter-spacing:-.3px;
-  background:linear-gradient(125deg,#f2edec 20%,#e63946 70%);
+  background:linear-gradient(125deg,var(--text) 20%,#e63946 70%);
   -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
  
 }
@@ -511,208 +528,6 @@ html,body{
   </div>
 </div>
 
-<script>
-/* ================================================================
-   CONFIG
-================================================================ */
-const API_BASE = "http://127.0.0.1:5000";
-
-/* ================================================================
-   ALERT
-================================================================ */
-function showAlert(msg){
-  document.getElementById('alertBox').classList.add('show');
-  document.getElementById('alertText').textContent = msg;
-}
-
-function hideAlert(){
-  document.getElementById('alertBox').classList.remove('show');
-}
-
-/* ================================================================
-   LOADING
-================================================================ */
-function setLoading(id, on){
-  const btn = document.getElementById(id);
-  btn.classList.toggle('loading', on);
-  btn.disabled = on;
-}
-
-/* ================================================================
-   LOGIN
-================================================================ */
-async function handleLogin(){
-  hideAlert();
-
-  const email    = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-
-  setLoading("loginBtn", true);
-
-  try {
-    const res = await fetch(`${API_BASE}/auth/login`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await res.json();
-
-    if(!res.ok){
-      showAlert(data.error || "Login failed ❌");
-      return;
-    }
-
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
-
-    showSuccess("login", data.user.name);
-
-    setTimeout(() => {
-      window.location.href = "index.html";
-    }, 1000);
-
-  } catch (err) {
-    console.log(err);
-    showAlert("Backend not reachable ❌");
-  }
-
-  setLoading("loginBtn", false);
-}
-
-/* ================================================================
-   REGISTER
-================================================================ */
-async function handleRegister(){
-  hideAlert();
-
-  const name     = document.getElementById('regName').value;
-  const email    = document.getElementById('regEmail').value;
-  const password = document.getElementById('regPassword').value;
-
-  setLoading("regBtn", true);
-
-  try {
-    const res = await fetch(`${API_BASE}/auth/register`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password })
-    });
-
-    const data = await res.json();
-
-    if(!res.ok){
-      showAlert(data.error || "Register failed ❌");
-      return;
-    }
-
-    localStorage.setItem("token", data.token);
-    localStorage.setItem("user", JSON.stringify(data.user));
-
-    showSuccess("register", name);
-
-    setTimeout(() => {
-      window.location.href = "index.html";
-    }, 1200);
-
-  } catch (err) {
-    console.log(err);
-    showAlert("Backend not reachable ❌");
-  }
-
-  setLoading("regBtn", false);
-}
-
-/* ================================================================
-   SUCCESS
-================================================================ */
-function showSuccess(mode, name){
-  document.getElementById('loginForm').classList.remove('active');
-  document.getElementById('registerForm').classList.remove('active');
-
-  const screen = document.getElementById('successScreen');
-  screen.classList.add('show');
-
-  document.getElementById('successTitle').textContent =
-    mode === "register"
-      ? `Welcome, ${name}! 🎉`
-      : `Welcome back, ${name}!`;
-}
-
-/* ================================================================
-   UI HELPERS
-================================================================ */
-function switchTab(tab){
-  document.getElementById('successScreen').classList.remove('show');
-
-  document.querySelectorAll('.tab-btn').forEach((b, i) => {
-    b.classList.toggle('active',
-      (i === 0 && tab === 'login') || (i === 1 && tab === 'register'));
-  });
-
-  document.getElementById('loginForm').classList.toggle('active', tab === 'login');
-  document.getElementById('registerForm').classList.toggle('active', tab === 'register');
-
-  document.getElementById('formTitle').textContent =
-    tab === 'login' ? 'Welcome back' : 'Create account';
-  document.getElementById('formSub').textContent =
-    tab === 'login'
-      ? 'Sign in to continue your conversations.'
-      : 'Join Drave and start chatting.';
-
-  hideAlert();
-}
-
-function switchTabLink(e, tab){
-  e.preventDefault();
-  switchTab(tab);
-}
-
-function togglePw(inputId, btn){
-  const input = document.getElementById(inputId);
-  const isText = input.type === 'text';
-  input.type = isText ? 'password' : 'text';
-  btn.innerHTML = isText
-    ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>`
-    : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>`;
-}
-
-function checkStrength(val){
-  const wrap = document.getElementById('strengthWrap');
-  const label = document.getElementById('strengthLabel');
-  const bars = [
-    document.getElementById('sb1'),
-    document.getElementById('sb2'),
-    document.getElementById('sb3'),
-    document.getElementById('sb4')
-  ];
-
-  if(!val){ wrap.classList.remove('visible'); return; }
-  wrap.classList.add('visible');
-
-  let score = 0;
-  if(val.length >= 8)            score++;
-  if(/[A-Z]/.test(val))          score++;
-  if(/[0-9]/.test(val))          score++;
-  if(/[^A-Za-z0-9]/.test(val))   score++;
-
-  const colors  = ['#ef4444','#f97316','#eab308','#22c55e'];
-  const labels  = ['Weak','Fair','Good','Strong'];
-
-  bars.forEach((b, i) => {
-    b.style.background = i < score ? colors[score - 1] : 'var(--surface3)';
-  });
-  label.textContent = labels[score - 1] || 'Weak';
-  label.style.color  = colors[score - 1] || '#ef4444';
-}
-
-/* Enter key support */
-document.addEventListener('keydown', e => {
-  if(e.key !== 'Enter') return;
-  const loginActive = document.getElementById('loginForm').classList.contains('active');
-  if(loginActive) handleLogin();
-  else            handleRegister();
-});
-</script>
+<script src="server.js"></script>
 </body>
 </html>
