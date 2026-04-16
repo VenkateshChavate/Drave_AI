@@ -32,7 +32,7 @@ os.makedirs(GENERATED_FOLDER, exist_ok=True)
 # =========================
 # GEMINI CLIENT
 # =========================
-API_KEY = "key"
+API_KEY = "AIzaSyBjY9NaMECE7gS5-GZZgjaXlAdgIguHkBA"
 client  = genai.Client(api_key=API_KEY)
 
 # =========================
@@ -196,9 +196,20 @@ def chat(current_user_id):
     ).sort("createdAt", -1).limit(5))
     history.reverse()
 
-    for msg in history[-5:]:
-        role     = "User" if msg["role"] == "user" else "Assistant"
-        context += f"{role}: {msg['text']}\n"
+    for msg in history:
+        role = "User" if msg["role"] == "user" else "Assistant"
+        text = msg["text"]
+
+        # Include file content snippet in context if the message is a file upload
+        if "file" in msg and os.path.exists(msg["file"]):
+            try:
+                with open(msg["file"], "r", encoding="utf-8") as f:
+                    file_data = f.read()
+                    text += f"\n[Document Content of {os.path.basename(msg['file'])}]:\n{file_data[:3000]}"
+            except Exception:
+                pass
+
+        context += f"{role}: {text}\n"
 
     prompt = (
         "You are Drave, a friendly and knowledgeable AI assistant.\n\n"
@@ -284,6 +295,30 @@ def upload(current_user_id):
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
 
+        # ── Analyze content if text-based ──────────────
+        reply = ""
+        ext = os.path.splitext(filename)[1].lower()
+        # List of supported text extensions for analysis
+        if ext in [".txt", ".md", ".py", ".js", ".html", ".css", ".csv", ".json"]:
+            try:
+                with open(filepath, "r", encoding="utf-8") as f:
+                    file_text = f.read()
+                
+                # Prompt Gemini to analyze the file content immediately
+                prompt = (
+                    f"The user has uploaded a file named '{filename}'.\n\n"
+                    f"Content:\n{file_text[:8000]}\n\n"
+                    "Please analyze this file and provide a helpful summary. "
+                    "Do NOT use markdown. Keep it plain text."
+                )
+                response = client.models.generate_content(model=MODEL, contents=prompt)
+                reply = response.text.strip()
+            except Exception as e:
+                reply = f"File {filename} uploaded, but analysis failed: {str(e)}"
+        
+        if not reply:
+            reply = f"File {filename} uploaded successfully. (Analysis is available for text-based files)."
+
         collection.insert_one({
             "chatId":    chat_id,
             "role":      "user",
@@ -292,11 +327,19 @@ def upload(current_user_id):
             "userId":    current_user_id,
             "createdAt": datetime.utcnow()
         })
+        
+        collection.insert_one({
+            "chatId":    chat_id,
+            "role":      "ai",
+            "text":      reply,
+            "userId":    current_user_id,
+            "createdAt": datetime.utcnow()
+        })
 
-        return jsonify({"reply": f"File {filename} uploaded successfully"})
+        return jsonify({"reply": reply})
 
     except Exception as e:
-        return jsonify({"reply": str(e)})
+        return jsonify({"reply": f"❌ Error: {str(e)}"})
 
 # =========================
 # SERVE UPLOADED FILES

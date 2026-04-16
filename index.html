@@ -514,9 +514,19 @@ async function fetchUserChats() {
     });
     const chatIds = await res.json();
     
-    // Reset local store completely to avoid merging old cached data
     chats = {};
-    chatIds.forEach(id => { chats[id] = []; });
+
+    // Fetch history for each chat ID to populate sidebar labels immediately
+    await Promise.all(chatIds.map(async (id) => {
+      const hRes = await fetch(`http://localhost:5000/history/${id}`, {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (hRes.ok) {
+        chats[id] = await hRes.json();
+      } else {
+        chats[id] = [];
+      }
+    }));
 
     // Ensure currentChatId belongs to the current user
     if (currentChatId && !chats[currentChatId]) {
@@ -527,7 +537,7 @@ async function fetchUserChats() {
     loadChats();
     
     if (currentChatId) {
-        switchChat(currentChatId); // Pull actual history from DB
+        renderChat(); // Render history that was just fetched
     } else {
         showWelcome();
     }
