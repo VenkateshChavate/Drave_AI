@@ -32,7 +32,7 @@ os.makedirs(GENERATED_FOLDER, exist_ok=True)
 # =========================
 # GEMINI CLIENT
 # =========================
-API_KEY = ""
+API_KEY = "AQ.Ab8RN6JzLe08994dEtZrJUTxiJwx-0DhgF8RIYPvIPsQ118itQ"
 client  = genai.Client(api_key=API_KEY)
 
 # =========================
