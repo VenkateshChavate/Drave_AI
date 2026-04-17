@@ -92,11 +92,11 @@ body::before{
 }
 
 #history-list::-webkit-scrollbar {
-  width: 4px;
+  width: 5px;
 }
 #history-list::-webkit-scrollbar-thumb {
   background: var(--border-hi);
-  border-radius: 20px;
+  border-radius: 10px;
 }
 #history-list::-webkit-scrollbar-thumb:hover {
   background: var(--accent);
@@ -667,10 +667,11 @@ function addMsg(text, role, animate = true){
   hideWelcome();
   const row = document.createElement('div');
   row.className = `msg-row ${role}`;
+  row.dataset.text = text;
 
   const actionsHtml = role === 'ai'
     ? `<div class="msg-actions">
-        <button class="act-btn" onclick="copyMsg(this,'${escAttr(text)}')">
+        <button class="act-btn" onclick="copyMsg(this)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
         </button>
@@ -680,7 +681,7 @@ function addMsg(text, role, animate = true){
         </button>
       </div>`
     : `<div class="msg-actions">
-        <button class="act-btn" onclick="copyMsg(this,'${escAttr(text)}')">
+        <button class="act-btn" onclick="copyMsg(this)">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
           Copy
         </button>
@@ -807,7 +808,8 @@ function addTypingWithLabel(label = "Thinking…") {
   scrollToBottom();
 }
 
-function copyMsg(btn, text){
+function copyMsg(btn){
+  const text = btn.closest('.msg-row').dataset.text;
   navigator.clipboard.writeText(text).then(()=>{
     btn.classList.add('copied');
     btn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Copied`;

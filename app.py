@@ -32,7 +32,7 @@ os.makedirs(GENERATED_FOLDER, exist_ok=True)
 # =========================
 # GEMINI CLIENT
 # =========================
-API_KEY = "AQ.Ab8RN6KkHPOWb8zLiqUThd_zDVLnKOjZG9_A2nS6VFb5VfLqTw"
+API_KEY = ""
 client  = genai.Client(api_key=API_KEY)
 
 # =========================
@@ -277,6 +277,47 @@ def history(current_user_id, chat_id):
         return jsonify(chats)
     except Exception as e:
         return jsonify({"error": str(e)})
+
+# =========================
+# DOWNLOAD CHAT ROUTE
+# =========================
+@app.route("/download-chat/<chat_id>", methods=["GET"])
+@token_required
+def download_chat(current_user_id, chat_id):
+    try:
+        messages = list(collection.find(
+            {"chatId": chat_id, "userId": current_user_id},
+            {"_id": 0}
+        ).sort("createdAt", 1))
+
+        if not messages:
+            return jsonify({"error": "No messages found"}), 404
+
+        lines = [f"Drave Chat Export — {chat_id}", "=" * 60, ""]
+        for msg in messages:
+            role = "You" if msg.get("role") == "user" else "Drave"
+            timestamp = msg.get("createdAt", "")
+            if hasattr(timestamp, "strftime"):
+                timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
+            text = msg.get("text", "")
+            if msg.get("type") == "image":
+                text = f"[Generated Image: {text}]"
+            lines.append(f"[{timestamp}] {role}:")
+            lines.append(text)
+            lines.append("")
+
+        content = "\n".join(lines)
+
+        from flask import Response
+        return Response(
+            content,
+            mimetype="text/plain",
+            headers={
+                "Content-Disposition": f'attachment; filename="drave-chat-{chat_id[:8]}.txt"'
+            }
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # =========================
 # FILE UPLOAD API ROUTE
