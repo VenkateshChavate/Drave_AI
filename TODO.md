@@ -1,8 +1,9 @@
-# PDF Download Feature Implementation
+# Fix Tabular Output
 
-- [x] Create TODO.md
-- [x] Update requirements.txt (add fpdf2)
-- [x] Update app.py (add /download-pdf endpoint)
-- [x] Update index.html (add download PDF button + JS handler)
-- [x] Test implementation
+- [x] Understand codebase (app.py, index.html)
+- [x] Update `app.py` system prompt to allow markdown tables when user requests tabular output
+- [x] Update `index.html` `formatText()` to detect markdown tables and render them as HTML tables
+- [x] Add CSS table styles in `index.html` for theme-aware rendering
+- [x] Verify no regression in plain-text responses
+all other
 

@@ -11,6 +11,7 @@ import bcrypt
 import jwt
 from functools import wraps
 from fpdf import FPDF
+import re
 
 # =========================
 # APP SETUP
@@ -34,7 +35,7 @@ os.makedirs(GENERATED_FOLDER, exist_ok=True)
 # =========================
 # GEMINI CLIENT
 # =========================
-API_KEY = "AQ.Ab8RN6IS1ZTTEuaeEyTqh04FQ_PslpN-7i0WXjAJNs7UdVvi4Q"
+API_KEY = ""
 client  = genai.Client(api_key=API_KEY)
 
 # =========================
@@ -44,8 +45,8 @@ try:
     client_db  = MongoClient("mongodb://127.0.0.1:27017/")
     db         = client_db["drave"]
     collection = db["messages"]
-    users_col  = db["users"]           # ← new collection for auth
-    users_col.create_index("email", unique=True)   # prevent duplicate emails
+    users_col  = db["users"]
+    users_col.create_index("email", unique=True)
     print("MongoDB Connected ✅")
 except Exception as e:
     print("MongoDB Error:", e)
@@ -87,21 +88,17 @@ def register():
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
 
-        # ── Validation ──────────────────────────────────
         if not name or not email or not password:
             return jsonify({"error": "All fields are required"}), 400
 
         if len(password) < 6:
             return jsonify({"error": "Password must be at least 6 characters"}), 400
 
-        # ── Check if email already exists ───────────────
         if users_col.find_one({"email": email}):
             return jsonify({"error": "Email already registered"}), 409
 
-        # ── Hash password ────────────────────────────────
         hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
 
-        # ── Save user ────────────────────────────────────
         user_id = str(uuid.uuid4())
         users_col.insert_one({
             "_id":        user_id,
@@ -111,7 +108,6 @@ def register():
             "createdAt":  datetime.utcnow()
         })
 
-        # ── Generate JWT ─────────────────────────────────
         token = jwt.encode(
             {
                 "userId": user_id,
@@ -140,20 +136,16 @@ def login():
         email    = data.get("email", "").strip().lower()
         password = data.get("password", "")
 
-        # ── Validation ──────────────────────────────────
         if not email or not password:
             return jsonify({"error": "Email and password are required"}), 400
 
-        # ── Find user ────────────────────────────────────
         user = users_col.find_one({"email": email})
         if not user:
             return jsonify({"error": "Invalid email or password"}), 401
 
-        # ── Check password ───────────────────────────────
         if not bcrypt.checkpw(password.encode("utf-8"), user["password"]):
             return jsonify({"error": "Invalid email or password"}), 401
 
-        # ── Generate JWT ─────────────────────────────────
         token = jwt.encode(
             {
                 "userId": str(user["_id"]),
@@ -190,7 +182,6 @@ def chat(current_user_id):
     if not user_message:
         return jsonify({"reply": "⚠️ Empty message"})
 
-    # Securely build context from DB (do not trust history sent by client)
     context = ""
     history = list(collection.find(
         {"chatId": chat_id, "userId": current_user_id},
@@ -202,7 +193,6 @@ def chat(current_user_id):
         role = "User" if msg["role"] == "user" else "Assistant"
         text = msg["text"]
 
-        # Include file content snippet in context if the message is a file upload
         if "file" in msg and os.path.exists(msg["file"]):
             try:
                 with open(msg["file"], "r", encoding="utf-8") as f:
@@ -217,7 +207,8 @@ def chat(current_user_id):
         "You are Drave, a friendly and knowledgeable AI assistant.\n\n"
         "Guidelines:\n"
         "- Provide direct, clear, well-structured answers.\n"
-        "- Do NOT use any markdown formatting.\n"
+        "- Do NOT use markdown formatting by default. Use plain text for normal responses.\n"
+        "- If the user explicitly asks for a table, tabular format, comparison, or differences, output a proper Markdown table using | column separators and a header separator line (e.g., |---|---|).\n"
         "- Use plain numbered lists (1. 2. 3.) or lettered lists if needed.\n"
         "- Separate sections with a blank line for readability.\n"
         "- For code, just write the code block plainly without triple backtick fencing.\n"
@@ -297,16 +288,13 @@ def upload(current_user_id):
         filepath = os.path.join(UPLOAD_FOLDER, filename)
         file.save(filepath)
 
-        # ── Analyze content if text-based ──────────────
         reply = ""
         ext = os.path.splitext(filename)[1].lower()
-        # List of supported text extensions for analysis
         if ext in [".txt", ".md", ".py", ".js", ".html", ".css", ".csv", ".json"]:
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     file_text = f.read()
-                
-                # Prompt Gemini to analyze the file content immediately
+
                 prompt = (
                     f"The user has uploaded a file named '{filename}'.\n\n"
                     f"Content:\n{file_text[:8000]}\n\n"
@@ -317,7 +305,7 @@ def upload(current_user_id):
                 reply = response.text.strip()
             except Exception as e:
                 reply = f"File {filename} uploaded, but analysis failed: {str(e)}"
-        
+
         if not reply:
             reply = f"File {filename} uploaded successfully. (Analysis is available for text-based files)."
 
@@ -329,7 +317,7 @@ def upload(current_user_id):
             "userId":    current_user_id,
             "createdAt": datetime.utcnow()
         })
-        
+
         collection.insert_one({
             "chatId":    chat_id,
             "role":      "ai",
@@ -385,7 +373,6 @@ def generate_image(current_user_id):
         with open(filepath, "wb") as f:
             f.write(image_data)
 
-        # Save record to DB for history tracking
         chat_id = data.get("chatId", "default")
         collection.insert_one({
             "chatId":    chat_id,
@@ -410,50 +397,263 @@ def get_generated_image(filename):
     return send_from_directory(GENERATED_FOLDER, filename)
 
 # =========================
-# PDF GENERATION
+# PDF GENERATION  —  Modern Redesign
 # =========================
 class DravePDF(FPDF):
+    """Premium PDF formatter for Drave AI responses."""
+
+    # ── Design Tokens ────────────────────────────────────
+    COL_BG       = (250, 250, 250)      # #fafafa  page bg
+    COL_HEADER   = (26,  23,  23)       # #1a1717  dark header
+    COL_ACCENT   = (230, 57,  70)       # #e63946  Drave red
+    COL_ACCENT_D = (193, 18,  31)       # #c1121f  deep red
+    COL_TEXT     = (32,  32,  32)       # #202020  body text
+    COL_TEXT_M   = (80,  80,  80)       # #505050  secondary text
+    COL_TEXT_L   = (120, 120, 120)      # #787878  muted text
+    COL_CODE_BG  = (244, 244, 245)      # #f4f4f5  code background
+    COL_RULE     = (230, 230, 230)      # #e6e6e6  horizontal rule
+
+    MARGIN_L     = 20
+    MARGIN_R     = 20
+    MARGIN_T     = 18
+    CONTENT_W    = 210 - MARGIN_L - MARGIN_R   # ~170 mm
+
     def __init__(self, title="Drave Response"):
-        super().__init__()
+        super().__init__(unit="mm", format="A4")
         self.title = title
-        self.set_auto_page_break(auto=True, margin=20)
+        self.set_auto_page_break(auto=True, margin=22)
+        self.set_margins(self.MARGIN_L, self.MARGIN_T, self.MARGIN_R)
         self.add_page()
-        self.set_font("Helvetica", "", 11)
+        self._draw_page_background()
 
+    # ── Helpers ──────────────────────────────────────────
+    def _set_fill(self, rgb):
+        self.set_fill_color(*rgb)
+
+    def _set_draw(self, rgb):
+        self.set_draw_color(*rgb)
+
+    def _set_text(self, rgb):
+        self.set_text_color(*rgb)
+
+    def _draw_page_background(self):
+        """Fill entire page with light background color."""
+        self._set_fill(self.COL_BG)
+        self.rect(0, 0, 210, 297, style="F")
+
+    # ── Header ───────────────────────────────────────────
     def header(self):
-        # Branding header with accent color
-        self.set_font("Helvetica", "B", 16)
-        self.set_text_color(230, 57, 70)  # Drave accent red
-        self.cell(0, 12, "Drave", ln=True, align="L")
-        self.set_draw_color(230, 57, 70)
-        self.line(10, 22, 200, 22)
-        self.ln(6)
+        # Dark brand bar spanning full width
+        self._set_fill(self.COL_HEADER)
+        self.rect(0, 0, 210, 28, style="F")
 
+        # Red accent dot
+        self._set_fill(self.COL_ACCENT)
+        self.ellipse(self.MARGIN_L, 11, 5, 5, style="F")
+
+        # "Drave" wordmark
+        self.set_xy(self.MARGIN_L + 8, 9)
+        self.set_font("Helvetica", "B", 18)
+        self.set_text_color(255, 255, 255)
+        self.cell(0, 10, "Drave", ln=False)
+
+        # Subtitle
+        self.set_xy(self.MARGIN_L + 8, 17)
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(180, 180, 180)
+        self.cell(0, 5, "AI Response Export", ln=False)
+
+        # Generation timestamp (right-aligned)
+        ts = datetime.now().strftime("%b %d, %Y  ·  %H:%M")
+        self.set_xy(0, 11)
+        self.set_font("Helvetica", "", 8)
+        self.set_text_color(140, 140, 140)
+        self.cell(210 - self.MARGIN_R, 5, ts, align="R")
+
+        # Thin red underline below header
+        self._set_draw(self.COL_ACCENT)
+        self.set_line_width(0.6)
+        self.line(self.MARGIN_L, 28, 210 - self.MARGIN_R, 28)
+        self.set_line_width(0.2)
+        self.ln(32)
+
+    # ── Footer ───────────────────────────────────────────
     def footer(self):
-        self.set_y(-20)
-        self.set_font("Helvetica", "", 9)
-        self.set_text_color(120, 120, 120)
-        self.cell(0, 10, f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  Page {self.page_no()}", align="C")
+        y = -22
+        # Separator line
+        self._set_draw(self.COL_RULE)
+        self.set_line_width(0.3)
+        self.line(self.MARGIN_L, 297 + y + 4, 210 - self.MARGIN_R, 297 + y + 4)
 
+        # Red accent line above footer text
+        self._set_draw(self.COL_ACCENT)
+        self.set_line_width(0.8)
+        self.line(self.MARGIN_L, 297 + y + 6, 210 - self.MARGIN_R, 297 + y + 6)
+        self.set_line_width(0.2)
+
+        self.set_y(297 + y + 9)
+        self.set_font("Helvetica", "", 8)
+        self._set_text(self.COL_TEXT_L)
+        self.cell(
+            0, 5,
+            f"Generated by Drave    ·    {datetime.now().strftime('%Y-%m-%d %H:%M')}    ·    Page {self.page_no()}",
+            align="C"
+        )
+
+    # ── Content Rendering ────────────────────────────────
     def add_response(self, text):
-        self.set_font("Helvetica", "B", 13)
-        self.set_text_color(30, 30, 30)
-        self.cell(0, 10, "Response", ln=True)
-        self.ln(2)
+        # Red vertical accent bar on the left
+        self._set_fill(self.COL_ACCENT)
+        self.rect(self.MARGIN_L - 5, self.get_y(), 2.5, 12, style="F")
 
-        self.set_font("Helvetica", "", 11)
-        self.set_text_color(50, 50, 50)
+        # "Response" title
+        self.set_x(self.MARGIN_L)
+        self.set_font("Helvetica", "B", 15)
+        self._set_text(self.COL_TEXT)
+        self.cell(0, 12, "Response", ln=True)
+        self.ln(3)
 
-        # Clean and wrap text
-        cleaned = text.replace("\r", "")
+        # Clean text: strip markdown artifacts
+        cleaned = self._clean_markdown(text)
         paragraphs = cleaned.split("\n")
 
-        for para in paragraphs:
-            if para.strip() == "":
-                self.ln(4)
+        for raw in paragraphs:
+            para = raw.rstrip()
+            if not para:
+                self.ln(3)
                 continue
-            self.multi_cell(0, 7, para.strip())
+
+            stripped = para.lstrip()
+
+            # ── Code block detection ──
+            if self._is_code_line(stripped):
+                self._render_code_block(stripped)
+                continue
+
+            # ── Heading detection ──
+            if self._is_heading(stripped):
+                self._render_heading(stripped)
+                continue
+
+            # ── Numbered list ──
+            if self._is_numbered_list(stripped):
+                self._render_numbered_item(stripped)
+                continue
+
+            # ── Bullet list ──
+            if self._is_bullet_list(stripped):
+                self._render_bullet_item(stripped)
+                continue
+
+            # ── Horizontal rule ──
+            if stripped.replace("-", "").replace("=", "").replace("*", "") == "" and len(stripped) >= 3:
+                self._render_horizontal_rule()
+                continue
+
+            # ── Regular paragraph ──
+            self.set_x(self.MARGIN_L)
+            self.set_font("Helvetica", "", 11)
+            self._set_text(self.COL_TEXT)
+            self.multi_cell(self.CONTENT_W, 6, stripped)
             self.ln(2)
+
+    # ── Markdown Cleaning ────────────────────────────────
+    def _clean_markdown(self, text):
+        """Remove common markdown formatting artifacts."""
+        t = text.replace("\r", "")
+        t = re.sub(r"```\w*\n?", "", t)
+        t = re.sub(r"```", "", t)
+        t = re.sub(r"`([^`]+)`", r"\1", t)
+        t = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
+        t = re.sub(r"\*([^*]+)\*", r"\1", t)
+        t = re.sub(r"__([^_]+)__", r"\1", t)
+        t = re.sub(r"_([^_]+)_", r"\1", t)
+        t = re.sub(r"^#{1,6}\s*", "", t, flags=re.MULTILINE)
+        return t
+
+    # ── Line Type Detection ──────────────────────────────
+    def _is_code_line(self, stripped):
+        return (stripped.startswith("    ") or
+                stripped.startswith("\t") or
+                (len(stripped) > 2 and stripped[:2] in ("  ", " \t")))
+
+    def _is_heading(self, stripped):
+        return stripped.endswith(":") and len(stripped) < 80 and not stripped[:-1].endswith(".")
+
+    def _is_numbered_list(self, stripped):
+        return bool(re.match(r"^\d+\.\s", stripped))
+
+    def _is_bullet_list(self, stripped):
+        return stripped.startswith(("- ", "• ", "* ", "+ "))
+
+    # ── Element Renderers ────────────────────────────────
+    def _render_code_block(self, text):
+        code = text.lstrip().lstrip("\t")
+        x = self.MARGIN_L + 4
+        y = self.get_y()
+
+        self.set_font("Courier", "", 9.5)
+        self._set_text(self.COL_TEXT_M)
+        lines_needed = self.get_string_width(code) / (self.CONTENT_W - 12)
+        height = max(6, (int(lines_needed) + 1) * 4.5)
+
+        self._set_fill(self.COL_CODE_BG)
+        self._set_draw(self.COL_RULE)
+        self.rect(x - 2, y - 1, self.CONTENT_W - 8, height + 2, style="FD")
+
+        self.set_xy(x, y + 0.8)
+        self.multi_cell(self.CONTENT_W - 12, 4.5, code)
+        self.ln(3)
+
+    def _render_heading(self, text):
+        self.set_x(self.MARGIN_L)
+        self.set_font("Helvetica", "B", 12.5)
+        self._set_text(self.COL_TEXT)
+        self.multi_cell(self.CONTENT_W, 7, text)
+        self._set_draw(self.COL_ACCENT)
+        self.set_line_width(0.4)
+        y = self.get_y()
+        self.line(self.MARGIN_L, y + 1, self.MARGIN_L + 25, y + 1)
+        self.set_line_width(0.2)
+        self.ln(4)
+
+    def _render_numbered_item(self, text):
+        match = re.match(r"^(\d+\.)\s+(.*)", text)
+        if not match:
+            return
+        num, body = match.groups()
+
+        self.set_x(self.MARGIN_L)
+        self.set_font("Helvetica", "B", 11)
+        self._set_text(self.COL_ACCENT_D)
+        self.cell(8, 6, num, ln=False)
+
+        self.set_font("Helvetica", "", 11)
+        self._set_text(self.COL_TEXT)
+        self.multi_cell(self.CONTENT_W - 10, 6, body)
+        self.ln(1.5)
+
+    def _render_bullet_item(self, text):
+        body = text[2:]
+
+        self.set_x(self.MARGIN_L + 2)
+        self.set_font("Helvetica", "B", 11)
+        self._set_text(self.COL_ACCENT)
+        self.cell(5, 6, "•", ln=False)
+
+        self.set_font("Helvetica", "", 11)
+        self._set_text(self.COL_TEXT)
+        self.multi_cell(self.CONTENT_W - 10, 6, body)
+        self.ln(1.5)
+
+    def _render_horizontal_rule(self):
+        self.ln(2)
+        self._set_draw(self.COL_RULE)
+        self.set_line_width(0.3)
+        y = self.get_y()
+        self.line(self.MARGIN_L + 20, y, 210 - self.MARGIN_R - 20, y)
+        self.set_line_width(0.2)
+        self.ln(4)
 
 
 @app.route("/download-pdf", methods=["POST"])
@@ -469,7 +669,6 @@ def download_pdf(current_user_id):
         pdf = DravePDF()
         pdf.add_response(text)
 
-        # Stream PDF directly from memory — no disk write inside project path
         filename = f"drave-response-{uuid.uuid4().hex[:8]}.pdf"
         pdf_buffer = io.BytesIO()
         pdf.output(pdf_buffer)
@@ -491,3 +690,4 @@ def download_pdf(current_user_id):
 # =========================
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
