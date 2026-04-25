@@ -225,22 +225,27 @@ html,body{
 .field-input{
   width:100%;height:var(--input-h);
   background:var(--surface2);
-  border:1px solid var(--border-md);
+  border:1.5px solid var(--border-md);
   border-radius:12px;
   padding:0 16px 0 44px;
   font-family:'DM Sans',sans-serif;font-size:14.5px;font-weight:300;
   color:var(--text);outline:none;
   transition:border-color .2s,box-shadow .2s,background .2s;
 }
-.field-input::placeholder{color:var(--text-3)}
+.field-input::placeholder{color:var(--text-3);opacity:.75}
 .field-input:focus{
-  border-color:rgba(230,57,70,0.45);
-  background:rgba(34,30,30,0.9);
-  box-shadow:0 0 0 3px rgba(230,57,70,0.1),0 4px 16px rgba(0,0,0,0.25);
+  border-color:var(--accent);
+  background:var(--surface);
+  box-shadow:0 0 0 3px var(--accent-dim),0 4px 16px rgba(0,0,0,0.12);
 }
 .field-input:focus ~ .field-icon,
 .field-wrap:focus-within .field-icon{color:var(--accent2)}
 .field-icon{z-index:1}
+
+/* light-theme overrides for inputs */
+:root.light-theme .field-input:focus{
+  box-shadow:0 0 0 3px var(--accent-dim),0 4px 16px rgba(0,0,0,0.06);
+}
 
 /* password toggle */
 .toggle-pw{
@@ -372,6 +377,29 @@ html,body{
   to{opacity:1;transform:translateY(0)}
 }
 
+/* ── THEME TOGGLE ───────────────────────────────── */
+.icon-btn{
+  width:34px;height:34px;border-radius:9px;background:none;border:none;cursor:pointer;
+  color:var(--text-2);display:flex;align-items:center;justify-content:center;
+  transition:background .15s,color .15s;
+}
+.icon-btn:hover{background:var(--surface);color:var(--text)}
+.theme-toggle{
+  position:fixed;top:16px;right:16px;z-index:10;
+  background:var(--surface);border:1px solid var(--border-md);
+}
+
+/* Light theme tweaks */
+:root.light-theme .card{
+  box-shadow:0 40px 80px rgba(0,0,0,0.12),0 0 0 0.5px rgba(0,0,0,0.04),inset 0 1px 0 rgba(255,255,255,0.06);
+}
+:root.light-theme .bg-canvas::before{opacity:.35}
+:root.light-theme .bg-grid{
+  background-image:
+    linear-gradient(rgba(0,0,0,0.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(0,0,0,0.04) 1px,transparent 1px);
+}
+
 /* ── RESPONSIVE ─────────────────────────────────── */
 @media(max-width:480px){
   .card{padding:32px 24px 28px;border-radius:18px}
@@ -387,6 +415,12 @@ html,body{
   <div class="bg-orb bg-orb-1"></div>
   <div class="bg-orb bg-orb-2"></div>
 </div>
+
+<!-- Theme toggle -->
+<button class="icon-btn theme-toggle" title="Toggle Theme" onclick="toggleTheme()">
+  <svg class="sun-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+  <svg class="moon-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+</button>
 
 <div class="page">
   <div class="card">

@@ -1,5 +1,6 @@
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, send_from_directory, send_file
 from flask_cors import CORS
+import io
 from google import genai
 from google.genai import types
 from pymongo import MongoClient
@@ -9,6 +10,7 @@ import uuid
 import bcrypt
 import jwt
 from functools import wraps
+from fpdf import FPDF
 
 # =========================
 # APP SETUP
@@ -32,7 +34,7 @@ os.makedirs(GENERATED_FOLDER, exist_ok=True)
 # =========================
 # GEMINI CLIENT
 # =========================
-API_KEY = "AQ.Ab8RN6JzLe08994dEtZrJUTxiJwx-0DhgF8RIYPvIPsQ118itQ"
+API_KEY = "AQ.Ab8RN6IS1ZTTEuaeEyTqh04FQ_PslpN-7i0WXjAJNs7UdVvi4Q"
 client  = genai.Client(api_key=API_KEY)
 
 # =========================
@@ -279,47 +281,6 @@ def history(current_user_id, chat_id):
         return jsonify({"error": str(e)})
 
 # =========================
-# DOWNLOAD CHAT ROUTE
-# =========================
-@app.route("/download-chat/<chat_id>", methods=["GET"])
-@token_required
-def download_chat(current_user_id, chat_id):
-    try:
-        messages = list(collection.find(
-            {"chatId": chat_id, "userId": current_user_id},
-            {"_id": 0}
-        ).sort("createdAt", 1))
-
-        if not messages:
-            return jsonify({"error": "No messages found"}), 404
-
-        lines = [f"Drave Chat Export — {chat_id}", "=" * 60, ""]
-        for msg in messages:
-            role = "You" if msg.get("role") == "user" else "Drave"
-            timestamp = msg.get("createdAt", "")
-            if hasattr(timestamp, "strftime"):
-                timestamp = timestamp.strftime("%Y-%m-%d %H:%M:%S UTC")
-            text = msg.get("text", "")
-            if msg.get("type") == "image":
-                text = f"[Generated Image: {text}]"
-            lines.append(f"[{timestamp}] {role}:")
-            lines.append(text)
-            lines.append("")
-
-        content = "\n".join(lines)
-
-        from flask import Response
-        return Response(
-            content,
-            mimetype="text/plain",
-            headers={
-                "Content-Disposition": f'attachment; filename="drave-chat-{chat_id[:8]}.txt"'
-            }
-        )
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# =========================
 # FILE UPLOAD API ROUTE
 # =========================
 @app.route("/upload", methods=["POST"])
@@ -447,6 +408,83 @@ def generate_image(current_user_id):
 @app.route("/generated/<filename>")
 def get_generated_image(filename):
     return send_from_directory(GENERATED_FOLDER, filename)
+
+# =========================
+# PDF GENERATION
+# =========================
+class DravePDF(FPDF):
+    def __init__(self, title="Drave Response"):
+        super().__init__()
+        self.title = title
+        self.set_auto_page_break(auto=True, margin=20)
+        self.add_page()
+        self.set_font("Helvetica", "", 11)
+
+    def header(self):
+        # Branding header with accent color
+        self.set_font("Helvetica", "B", 16)
+        self.set_text_color(230, 57, 70)  # Drave accent red
+        self.cell(0, 12, "Drave", ln=True, align="L")
+        self.set_draw_color(230, 57, 70)
+        self.line(10, 22, 200, 22)
+        self.ln(6)
+
+    def footer(self):
+        self.set_y(-20)
+        self.set_font("Helvetica", "", 9)
+        self.set_text_color(120, 120, 120)
+        self.cell(0, 10, f"Generated on {datetime.now().strftime('%Y-%m-%d %H:%M')}  |  Page {self.page_no()}", align="C")
+
+    def add_response(self, text):
+        self.set_font("Helvetica", "B", 13)
+        self.set_text_color(30, 30, 30)
+        self.cell(0, 10, "Response", ln=True)
+        self.ln(2)
+
+        self.set_font("Helvetica", "", 11)
+        self.set_text_color(50, 50, 50)
+
+        # Clean and wrap text
+        cleaned = text.replace("\r", "")
+        paragraphs = cleaned.split("\n")
+
+        for para in paragraphs:
+            if para.strip() == "":
+                self.ln(4)
+                continue
+            self.multi_cell(0, 7, para.strip())
+            self.ln(2)
+
+
+@app.route("/download-pdf", methods=["POST"])
+@token_required
+def download_pdf(current_user_id):
+    try:
+        data = request.get_json()
+        text = data.get("text", "").strip()
+
+        if not text:
+            return jsonify({"error": "No text provided"}), 400
+
+        pdf = DravePDF()
+        pdf.add_response(text)
+
+        # Stream PDF directly from memory — no disk write inside project path
+        filename = f"drave-response-{uuid.uuid4().hex[:8]}.pdf"
+        pdf_buffer = io.BytesIO()
+        pdf.output(pdf_buffer)
+        pdf_buffer.seek(0)
+
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename
+        )
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 
 # =========================
 # RUN SERVER
