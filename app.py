@@ -169,6 +169,67 @@ def login():
         return jsonify({"error": str(e)}), 500
 
 # =========================
+# AUTH — FORGOT PASSWORD
+# =========================
+@app.route("/auth/forgot-password", methods=["POST"])
+def forgot_password():
+    try:
+        data = request.get_json()
+        email = data.get("email", "").strip().lower()
+        if not email:
+            return jsonify({"error": "Email is required"}), 400
+
+        user = users_col.find_one({"email": email})
+        if not user:
+            # For security, we don't confirm if the account exists
+            return jsonify({"message": "If an account exists, a reset link will be sent"}), 200
+
+        # Create a short-lived token (15 mins)
+        token = jwt.encode(
+            {
+                "userId": str(user["_id"]),
+                "exp":    datetime.utcnow() + timedelta(minutes=15)
+            },
+            JWT_SECRET,
+            algorithm="HS256"
+        )
+
+        # In a real app, send an email. For simulation, we return it to the UI.
+        return jsonify({
+            "message": "Reset link generated (Simulated)",
+            "resetToken": token
+        }), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# =========================
+# AUTH — RESET PASSWORD
+# =========================
+@app.route("/auth/reset-password", methods=["POST"])
+def reset_password():
+    try:
+        data = request.get_json()
+        token = data.get("token")
+        password = data.get("password")
+
+        if not token or not password:
+            return jsonify({"error": "Missing token or password"}), 400
+
+        payload = jwt.decode(token, JWT_SECRET, algorithms=["HS256"])
+        user_id = payload["userId"]
+
+        hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt())
+        users_col.update_one({"_id": user_id}, {"$set": {"password": hashed}})
+
+        return jsonify({"message": "Password updated successfully"}), 200
+
+    except (jwt.ExpiredSignatureError, jwt.InvalidTokenError):
+        return jsonify({"error": "Invalid or expired reset link"}), 401
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+# =========================
 # CHAT API ROUTE
 # =========================
 @app.route("/chat", methods=["POST"])
@@ -461,7 +522,7 @@ class DravePDF(FPDF):
         self.set_xy(self.MARGIN_L + 8, 17)
         self.set_font("Helvetica", "", 8)
         self.set_text_color(180, 180, 180)
-        self.cell(0, 5, "AI Response Export", ln=False)
+        self.cell(0, 5, "AI Expert", ln=False)
 
         # Generation timestamp (right-aligned)
         ts = datetime.now().strftime("%b %d, %Y  ·  %H:%M")
@@ -501,16 +562,17 @@ class DravePDF(FPDF):
         )
 
     # ── Content Rendering ────────────────────────────────
-    def add_response(self, text):
+    def add_response(self, text, prompt=None):
         # Red vertical accent bar on the left
         self._set_fill(self.COL_ACCENT)
         self.rect(self.MARGIN_L - 5, self.get_y(), 2.5, 12, style="F")
 
-        # "Response" title
         self.set_x(self.MARGIN_L)
         self.set_font("Helvetica", "B", 15)
         self._set_text(self.COL_TEXT)
-        self.cell(0, 12, "Response", ln=True)
+
+        title = self._safe_text(prompt if prompt else "Response")
+        self.multi_cell(self.CONTENT_W, 8, title)
         self.ln(3)
 
         # Clean text: strip markdown artifacts
@@ -554,8 +616,29 @@ class DravePDF(FPDF):
             self.set_x(self.MARGIN_L)
             self.set_font("Helvetica", "", 11)
             self._set_text(self.COL_TEXT)
-            self.multi_cell(self.CONTENT_W, 6, stripped)
+            self.multi_cell(self.CONTENT_W, 6, self._safe_text(stripped))
             self.ln(2)
+
+    def _safe_text(self, text):
+        """Sanitize text for Latin-1 core fonts like Helvetica."""
+        if not text: return ""
+        # Replace common Unicode symbols used by LLMs with Latin-1 equivalents
+        replacements = {
+            "\u2022": "-", # Bullet point
+            "\u2013": "-", # en dash
+            "\u2014": "-", # em dash
+            "\u201c": '"', # left double quote
+            "\u201d": '"', # right double quote
+            "\u2018": "'", # left single quote
+            "\u2019": "'", # right single quote
+            "\u2122": "TM",
+            "\u00ae": "(R)",
+            "\u00a9": "(C)",
+        }
+        for k, v in replacements.items():
+            text = text.replace(k, v)
+        # Encode to latin-1 and ignore any remaining unsupported characters (like emojis)
+        return text.encode("latin-1", "ignore").decode("latin-1")
 
     # ── Markdown Cleaning ────────────────────────────────
     def _clean_markdown(self, text):
@@ -594,7 +677,8 @@ class DravePDF(FPDF):
 
         self.set_font("Courier", "", 9.5)
         self._set_text(self.COL_TEXT_M)
-        lines_needed = self.get_string_width(code) / (self.CONTENT_W - 12)
+        safe_code = self._safe_text(code)
+        lines_needed = self.get_string_width(safe_code) / (self.CONTENT_W - 12)
         height = max(6, (int(lines_needed) + 1) * 4.5)
 
         self._set_fill(self.COL_CODE_BG)
@@ -602,14 +686,14 @@ class DravePDF(FPDF):
         self.rect(x - 2, y - 1, self.CONTENT_W - 8, height + 2, style="FD")
 
         self.set_xy(x, y + 0.8)
-        self.multi_cell(self.CONTENT_W - 12, 4.5, code)
+        self.multi_cell(self.CONTENT_W - 12, 4.5, safe_code)
         self.ln(3)
 
     def _render_heading(self, text):
         self.set_x(self.MARGIN_L)
         self.set_font("Helvetica", "B", 12.5)
         self._set_text(self.COL_TEXT)
-        self.multi_cell(self.CONTENT_W, 7, text)
+        self.multi_cell(self.CONTENT_W, 7, self._safe_text(text))
         self._set_draw(self.COL_ACCENT)
         self.set_line_width(0.4)
         y = self.get_y()
@@ -630,7 +714,7 @@ class DravePDF(FPDF):
 
         self.set_font("Helvetica", "", 11)
         self._set_text(self.COL_TEXT)
-        self.multi_cell(self.CONTENT_W - 10, 6, body)
+        self.multi_cell(self.CONTENT_W - 10, 6, self._safe_text(body))
         self.ln(1.5)
 
     def _render_bullet_item(self, text):
@@ -639,11 +723,11 @@ class DravePDF(FPDF):
         self.set_x(self.MARGIN_L + 2)
         self.set_font("Helvetica", "B", 11)
         self._set_text(self.COL_ACCENT)
-        self.cell(5, 6, "•", ln=False)
+        self.cell(5, 6, "-", ln=False)
 
         self.set_font("Helvetica", "", 11)
         self._set_text(self.COL_TEXT)
-        self.multi_cell(self.CONTENT_W - 10, 6, body)
+        self.multi_cell(self.CONTENT_W - 10, 6, self._safe_text(body))
         self.ln(1.5)
 
     def _render_horizontal_rule(self):
@@ -662,12 +746,13 @@ def download_pdf(current_user_id):
     try:
         data = request.get_json()
         text = data.get("text", "").strip()
+        prompt = data.get("prompt", "").strip()
 
         if not text:
             return jsonify({"error": "No text provided"}), 400
 
         pdf = DravePDF()
-        pdf.add_response(text)
+        pdf.add_response(text, prompt=prompt)
 
         filename = f"drave-response-{uuid.uuid4().hex[:8]}.pdf"
         pdf_buffer = io.BytesIO()
@@ -690,4 +775,3 @@ def download_pdf(current_user_id):
 # =========================
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-

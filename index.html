@@ -1029,7 +1029,19 @@ function copyMsg(btn){
 }
 
 async function downloadPdf(btn){
-  const text = btn.closest('.msg-row').dataset.text;
+  const row = btn.closest('.msg-row');
+  const text = row.dataset.text;
+
+  let prompt = "";
+  let prev = row.previousElementSibling;
+  while(prev) {
+    if(prev.classList.contains('user')) {
+      prompt = prev.dataset.text || "";
+      break;
+    }
+    prev = prev.previousElementSibling;
+  }
+
   if(!text || !text.trim()){
     showToast("Nothing to download");
     return;
@@ -1050,7 +1062,10 @@ async function downloadPdf(btn){
         "Content-Type": "application/json",
         "Authorization": `Bearer ${token}`
       },
-      body: JSON.stringify({ text: text.trim() })
+      body: JSON.stringify({ 
+        text: text.trim(),
+        prompt: prompt.trim()
+      })
     });
 
     if(!res.ok){

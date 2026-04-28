@@ -1,9 +1,9 @@
-# Fix Tabular Output
+# Password Reset Implementation
 
-- [x] Understand codebase (app.py, index.html)
-- [x] Update `app.py` system prompt to allow markdown tables when user requests tabular output
-- [x] Update `index.html` `formatText()` to detect markdown tables and render them as HTML tables
-- [x] Add CSS table styles in `index.html` for theme-aware rendering
-- [x] Verify no regression in plain-text responses
-all other
-
+## Steps
+- [x] 1. Analyze codebase and understand current auth flow
+- [x] 2. Create implementation plan
+- [x] 3. Add backend endpoints in app.py (/auth/forgot-password, /auth/reset-password)
+- [x] 4. Add forgot password UI in auth.html
+- [x] 5. Add frontend handlers in server.js
+- [x] 6. Test the complete flow
